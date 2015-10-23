@@ -7,6 +7,10 @@
  */
 
 /**
+ * Add progress callback. Terry(2015/10/24)
+ */
+
+/**
  * Module dependencies.
  */
 
@@ -35,82 +39,84 @@ var typeis = require('type-is');
  * @api public
  */
 
-exports = module.exports = function (options) {
-	options = options || {};
+// exports = module.exports = function (options, progress) {
+options = options || {};
 
-	return function multipart(req, res, next) {
-		if (req._body) return next();
-		req.body = req.body || {};
-		req.files = req.files || {};
+return function multipart(req, res, next) {
+	if (req._body) return next();
+	req.body = req.body || {};
+	req.files = req.files || {};
 
-		// ignore GET
-		if ('GET' === req.method || 'HEAD' === req.method) return next();
+	// ignore GET
+	if ('GET' === req.method || 'HEAD' === req.method) return next();
 
-		// check Content-Type
-		if (!typeis(req, 'multipart/form-data')) return next();
+	// check Content-Type
+	if (!typeis(req, 'multipart/form-data')) return next();
 
-		// flag as parsed
-		req._body = true;
+	// flag as parsed
+	req._body = true;
 
-		// parse
-		var form = new multiparty.Form(options);
-		var data = {};
-		var files = {};
-		var done = false;
+	// parse
+	var form = new multiparty.Form(options);
+	var data = {};
+	var files = {};
+	var done = false;
 
-		function ondata(name, val, data) {
-			if (Array.isArray(data[name])) {
-				data[name].push(val);
-			} else if (data[name]) {
-				data[name] = [data[name], val];
-			} else {
-				data[name] = val;
-			}
+	function ondata(name, val, data) {
+		if (Array.isArray(data[name])) {
+			data[name].push(val);
+		} else if (data[name]) {
+			data[name] = [data[name], val];
+		} else {
+			data[name] = val;
 		}
-
-		form.on('field', function (name, val) {
-			ondata(name, val, data);
-		});
-
-		form.on('progress', function (bytesReceived, bytesExpected) {
-			res.write((bytesReceived / bytesExpected * 100).toFixed(1) + "%\n");
-		});
-
-		form.on('file', function (name, val) {
-			val.name = val.originalFilename;
-			val.type = val.headers['content-type'] || null;
-			ondata(name, val, files);
-		});
-
-		form.on('error', function (err) {
-			if (done) return;
-
-			done = true;
-			err.status = 400;
-
-			if (!req.readable) return next(err);
-
-			req.resume();
-			onFinished(req, function () {
-				next(err);
-			});
-		});
-
-		form.on('close', function () {
-			if (done) return;
-
-			done = true;
-
-			try {
-				req.body = qs.parse(data);
-				req.files = qs.parse(files);
-				next();
-			} catch (err) {
-				err.status = 400;
-				next(err);
-			}
-		});
-
-		form.parse(req);
 	}
+
+	form.on('field', function (name, val) {
+		ondata(name, val, data);
+	});
+
+	if (progress && typeof progress === "function") {
+		form.on('progress', function (bytesReceived, bytesExpected) {
+			progress.apply(form, res, bytesReceived, bytesExpected);
+		});
+	}
+
+	form.on('file', function (name, val) {
+		val.name = val.originalFilename;
+		val.type = val.headers['content-type'] || null;
+		ondata(name, val, files);
+	});
+
+	form.on('error', function (err) {
+		if (done) return;
+
+		done = true;
+		err.status = 400;
+
+		if (!req.readable) return next(err);
+
+		req.resume();
+		onFinished(req, function () {
+			next(err);
+		});
+	});
+
+	form.on('close', function () {
+		if (done) return;
+
+		done = true;
+
+		try {
+			req.body = qs.parse(data);
+			req.files = qs.parse(files);
+			next();
+		} catch (err) {
+			err.status = 400;
+			next(err);
+		}
+	});
+
+	form.parse(req);
+}
 };

@@ -24,3 +24,11 @@ app.post('/upload', multipartMiddleware, function(req, resp) {
 
 If you pass options to `multipart()`, they are passed directly into
 multiparty.
+
+## Add progress callback
+
+```js
+var multipartMiddleware = multipart({}, function(resp, bytesReceived, bytesExpected){
+	resp.write((bytesReceived / bytesExpected * 100).toFixed(1) + "%\n");
+});
+```
